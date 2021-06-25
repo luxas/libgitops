@@ -4,3 +4,8 @@
 
 # Binary artifacts
 bin/
+vendor
+.old
+*.txt
+old
+main_test.go
