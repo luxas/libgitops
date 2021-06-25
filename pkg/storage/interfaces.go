@@ -31,6 +31,10 @@ type Storage interface {
 	Writer
 }
 
+type StorageBuilder interface {
+	MakeStorage() (Storage, error)
+}
+
 // StorageCommon is an interface that contains the resources both needed
 // by Reader and Writer.
 type StorageCommon interface {

@@ -2,7 +2,10 @@ module github.com/weaveworks/libgitops
 
 go 1.15
 
-replace github.com/docker/distribution => github.com/docker/distribution v2.7.1+incompatible
+replace (
+	github.com/docker/distribution => github.com/docker/distribution v2.7.1+incompatible
+	github.com/googleapis/gnostic => github.com/googleapis/gnostic v0.4.1
+)
 
 require (
 	github.com/evanphx/json-patch v4.9.0+incompatible
@@ -23,8 +26,9 @@ require (
 	github.com/stretchr/testify v1.6.1
 	golang.org/x/sys v0.0.0-20210108172913-0df2131ae363
 	k8s.io/apimachinery v0.19.6
+	k8s.io/client-go v0.19.6 // indirect
 	k8s.io/kube-openapi v0.0.0-20200805222855-6aeccd4b50c6
 	k8s.io/utils v0.0.0-20200912215256-4140de9c8800
-	sigs.k8s.io/controller-runtime v0.7.0
+	sigs.k8s.io/controller-runtime v0.6.0
 	sigs.k8s.io/kustomize/kyaml v0.10.5
 )

@@ -18,6 +18,11 @@ type Storage interface {
 	FileFinder() FileFinder
 }
 
+type StorageBuilder interface {
+	MakeFilesystemStorage() (Storage, error)
+	storage.StorageBuilder
+}
+
 // FileFinder is a generic implementation for locating files on disk, to be
 // used by a Storage.
 //

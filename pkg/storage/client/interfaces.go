@@ -48,3 +48,7 @@ type Client interface {
 	// TODO: StatusClient
 	//client.Client
 }
+
+type ClientBuilder interface {
+	MakeClient() (Client, error)
+}

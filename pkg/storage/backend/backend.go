@@ -81,6 +81,10 @@ type Backend interface {
 	StatusWriter
 }
 
+type BackendBuilder interface {
+	MakeBackend() (Backend, error)
+}
+
 type ChangeOperation string
 
 const (
@@ -99,39 +103,47 @@ type Validator interface {
 // of many to use when encoding, and optionally, a Validator.
 //
 // All parameters except the validator are mandatory.
-func NewGeneric(
-	storage storage.Storage,
-	encoder serializer.Encoder,
-	decoder serializer.Decoder,
-	enforcer NamespaceEnforcer,
-	versioner StorageVersioner,
-	validator Validator,
-) (*Generic, error) {
-	if storage == nil {
-		return nil, fmt.Errorf("storage is mandatory")
+type GenericBuilder struct {
+	StorageBuilder storage.StorageBuilder
+	Encoder        serializer.Encoder
+	Decoder        serializer.Decoder
+	Enforcer       NamespaceEnforcer
+	Versioner      StorageVersioner
+	Validator      Validator
+}
+
+var _ BackendBuilder = GenericBuilder{}
+
+func (b GenericBuilder) MakeBackend() (Backend, error) {
+	if b.StorageBuilder == nil {
+		return nil, fmt.Errorf("StorageBuilder is mandatory")
 	}
-	if encoder == nil {
+	storage, err := b.StorageBuilder.MakeStorage()
+	if err != nil {
+		return nil, err
+	}
+	if b.Encoder == nil {
 		return nil, fmt.Errorf("encoder is mandatory")
 	}
-	if decoder == nil {
+	if b.Decoder == nil {
 		return nil, fmt.Errorf("decoder is mandatory")
 	}
-	if enforcer == nil {
+	if b.Enforcer == nil {
 		return nil, fmt.Errorf("enforcer is mandatory")
 	}
-	if versioner == nil {
+	if b.Versioner == nil {
 		return nil, fmt.Errorf("versioner is mandatory")
 	}
 	return &Generic{
 		// It shouldn't matter if we use the encoder's or decoder's SchemeLock
-		LockedScheme: encoder.GetLockedScheme(),
-		encoder:      encoder,
-		decoder:      decoder,
+		LockedScheme: b.Encoder.GetLockedScheme(),
+		encoder:      b.Encoder,
+		decoder:      b.Decoder,
 
 		storage:   storage,
-		enforcer:  enforcer,
-		validator: validator,
-		versioner: versioner,
+		enforcer:  b.Enforcer,
+		validator: b.Validator,
+		versioner: b.Versioner,
 	}, nil
 }
 

@@ -28,6 +28,11 @@ type Client interface {
 	BranchTransaction(ctx context.Context, branchName string, opts ...TxOption) BranchTx
 }
 
+type ClientBuilder interface {
+	MakeTransactionalClient() (Client, error)
+	client.ClientBuilder
+}
+
 type BranchManager interface {
 	// CreateBranch creates a new branch with the given target branch name. It forks out
 	// of the branch specified in the context.

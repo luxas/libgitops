@@ -16,11 +16,26 @@ import (
 
 var _ Client = &Generic{}
 
-func NewGeneric(c client.Client, manager BranchManager, merger BranchMerger) (Client, error) {
-	if c == nil {
-		return nil, fmt.Errorf("%w: c is required", core.ErrInvalidParameter)
+var _ ClientBuilder = GenericBuilder{}
+
+type GenericBuilder struct {
+	// TODO: Don't embed
+	client.ClientBuilder
+	Manager BranchManager
+	Merger  BranchMerger
+}
+
+func (b GenericBuilder) MakeTransactionalClient() (Client, error) {
+	if b.ClientBuilder == nil {
+		return nil, fmt.Errorf("%w: ClientBuilder is required", core.ErrInvalidParameter)
 	}
-	if manager == nil {
+
+	c, err := b.ClientBuilder.MakeClient()
+	if err != nil {
+		return nil, err
+	}
+
+	if b.Manager == nil {
 		return nil, fmt.Errorf("%w: manager is required", core.ErrInvalidParameter)
 	}
 	return &Generic{
@@ -29,8 +44,8 @@ func NewGeneric(c client.Client, manager BranchManager, merger BranchMerger) (Cl
 		txsMu:       &sync.Mutex{},
 		txHooks:     &MultiTransactionHook{},
 		commitHooks: &MultiCommitHook{},
-		manager:     manager,
-		merger:      merger,
+		manager:     b.Manager,
+		merger:      b.Merger,
 	}, nil
 }
 

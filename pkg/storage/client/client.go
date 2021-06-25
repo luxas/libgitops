@@ -24,10 +24,19 @@ import (
 
 // NewGeneric constructs a new Generic client
 // TODO: Construct the default patcher from the given scheme, make patcher an opt instead
-func NewGeneric(backend backend.Backend) (*Generic, error) {
-	if backend == nil {
-		return nil, fmt.Errorf("backend is mandatory")
+type GenericBuilder struct {
+	BackendBuilder backend.BackendBuilder
+}
+
+func (b GenericBuilder) MakeClient() (Client, error) {
+	if b.BackendBuilder == nil {
+		return nil, fmt.Errorf("BackendBuilder is mandatory")
 	}
+	backend, err := b.BackendBuilder.MakeBackend()
+	if err != nil {
+		return nil, err
+	}
+
 	return &Generic{backend, serializer.NewPatcher(backend.Encoder(), backend.Decoder())}, nil
 }
 

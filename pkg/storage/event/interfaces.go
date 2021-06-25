@@ -24,3 +24,8 @@ type Storage interface {
 	// Close closes the EventStorage and underlying resources gracefully.
 	io.Closer
 }
+
+type StorageBuilder interface {
+	MakeEventStorage() (Storage, error)
+	storage.StorageBuilder
+}

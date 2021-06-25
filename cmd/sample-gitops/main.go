@@ -152,7 +152,35 @@ func run(identityFile, gitURL, ghToken, authorName, authorEmail, prMilestone str
 	encoder := scheme.Serializer.Encoder()
 	decoder := scheme.Serializer.Decoder()
 
-	rawManifest, err := unstructuredevent.NewManifest(
+	// Use the version information in the scheme to determine the storage version
+	versioner := backend.SchemePreferredVersioner{Scheme: scheme.Scheme}
+
+	txClient, err := distributed.GenericBuilder{
+		ClientBuilder: transactional.GenericBuilder{
+			ClientBuilder: client.GenericBuilder{
+				BackendBuilder: backend.GenericBuilder{
+					StorageBuilder: unstructuredevent.ManifestBuilder{
+						Directory:    localClone.Dir(),
+						ContentTyper: filesystem.DefaultContentTyper,
+						Namespacer:   storage.StaticNamespacer{NamespacedIsDefaultPolicy: false}, // all objects root-spaced
+						Recognizer:   unstructuredfs.KubeObjectRecognizer{Decoder: decoder},
+						PathExcluder: filesystem.DefaultPathExcluders(),
+					},
+					Encoder:   encoder,
+					Decoder:   decoder,
+					Enforcer:  kube.NewNamespaceEnforcer(),
+					Versioner: versioner,
+				},
+			},
+			Manager: localClone,
+		},
+		Remote: localClone,
+	}.MakeDistributedTransactionalClient()
+	if err != nil {
+		return err
+	}
+
+	/*rawManifest, err := unstructuredevent.NewManifest(
 		localClone.Dir(),
 		filesystem.DefaultContentTyper,
 		storage.StaticNamespacer{NamespacedIsDefaultPolicy: false}, // all objects root-spaced
@@ -161,7 +189,7 @@ func run(identityFile, gitURL, ghToken, authorName, authorEmail, prMilestone str
 	)
 	if err != nil {
 		return err
-	}
+	}*/
 
 	// Create the channel to receive events to, and register it with the EventStorage
 	updates := make(event.ObjectEventStream, 4096)
@@ -171,10 +199,7 @@ func run(identityFile, gitURL, ghToken, authorName, authorEmail, prMilestone str
 
 	defer func() { _ = rawManifest.Close() }()
 
-	// Use the version information in the scheme to determine the storage version
-	versioner := backend.SchemePreferredVersioner{Scheme: scheme.Scheme}
-
-	b, err := backend.NewGeneric(rawManifest, encoder, decoder, kube.NewNamespaceEnforcer(), versioner, nil)
+	/*b, err := backend.NewGeneric(rawManifest, encoder, decoder, kube.NewNamespaceEnforcer(), versioner, nil)
 	if err != nil {
 		return err
 	}
@@ -193,7 +218,7 @@ func run(identityFile, gitURL, ghToken, authorName, authorEmail, prMilestone str
 	txClient, err := distributed.NewClient(txGeneralClient, localClone)
 	if err != nil {
 		return err
-	}
+	}*/
 
 	// Register a tx hook so that a new copy-on-write overlay is created when transactions are made
 	versionRefHook := unstructuredtx.NewUnstructuredStorageTxHandler(gitClient)

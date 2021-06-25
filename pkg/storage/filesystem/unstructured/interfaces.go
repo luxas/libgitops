@@ -31,6 +31,11 @@ type Storage interface {
 	UnstructuredFileFinder() FileFinder
 }
 
+type StorageBuilder interface {
+	MakeUnstructuredStorage() (Storage, error)
+	filesystem.StorageBuilder
+}
+
 // ObjectRecognizer recognizes objects stored in files.
 type ObjectRecognizer interface {
 	// RecognizeObjectIDs returns the ObjectIDs present in the file with the given name,

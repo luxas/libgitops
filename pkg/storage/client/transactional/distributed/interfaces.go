@@ -39,6 +39,11 @@ type Client interface {
 	Remote() Remote
 }
 
+type ClientBuilder interface {
+	MakeDistributedTransactionalClient() (Client, error)
+	transactional.ClientBuilder
+}
+
 type Remote interface {
 	// Push pushes the attached branch (of the ctx) to the remote.
 	// Push must block as long as the operation is in progress, but also

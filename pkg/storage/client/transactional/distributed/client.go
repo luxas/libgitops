@@ -15,19 +15,34 @@ import (
 
 // NewClient creates a new distributed Client using the given underlying transactional Client,
 // remote, and options that configure how the Client should respond to network partitions.
-func NewClient(c transactional.Client, remote Remote, opts ...ClientOption) (*Generic, error) {
-	if c == nil {
-		return nil, fmt.Errorf("%w: c is mandatory", core.ErrInvalidParameter)
+type GenericBuilder struct {
+	// TODO: Don't embed
+	transactional.ClientBuilder
+	Remote Remote
+	Opts   []ClientOption
+}
+
+var _ ClientBuilder = GenericBuilder{}
+
+func (b GenericBuilder) MakeDistributedTransactionalClient() (Client, error) {
+	if b.ClientBuilder == nil {
+		return nil, fmt.Errorf("%w: ClientBuilder is mandatory", core.ErrInvalidParameter)
 	}
-	if remote == nil {
+
+	c, err := b.ClientBuilder.MakeTransactionalClient()
+	if err != nil {
+		return nil, err
+	}
+
+	if b.Remote == nil {
 		return nil, fmt.Errorf("%w: remote is mandatory", core.ErrInvalidParameter)
 	}
 
-	o := defaultOptions().ApplyOptions(opts)
+	o := defaultOptions().ApplyOptions(b.Opts)
 
 	g := &Generic{
 		Client:        c,
-		remote:        remote,
+		remote:        b.Remote,
 		opts:          *o,
 		branchLocks:   make(map[string]*branchLock),
 		branchLocksMu: &sync.Mutex{},
@@ -39,6 +54,10 @@ func NewClient(c transactional.Client, remote Remote, opts ...ClientOption) (*Ge
 
 	return g, nil
 }
+
+/*func (b GenericBuilder) MakeTransactionalClient() (transactional.Client, error) {
+	return b.MakeDistributedTransactionalClient()
+}*/
 
 type Generic struct {
 	transactional.Client

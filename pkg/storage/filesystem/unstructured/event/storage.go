@@ -26,31 +26,41 @@ type Storage interface {
 	fileevents.Storage
 }
 
+type StorageBuilder interface {
+	MakeUnstructuredEventStorage() (Storage, error)
+	unstructured.StorageBuilder
+	fileevents.StorageBuilder
+}
+
 const defaultEventsBufferSize = 4096
 
-// NewManifest is a high-level constructor for a generic
+// ManifestBuilder is a high-level constructor for a generic
 // unstructured.FileFinder and filesystem.Storage, together with a
 // inotify FileWatcher; all combined into an unstructuredevent.Storage.
-func NewManifest(
-	dir string,
-	contentTyper filesystem.ContentTyper,
-	namespacer storage.Namespacer,
-	recognizer unstructured.ObjectRecognizer,
-	pathExcluder filesystem.PathExcluder,
-) (Storage, error) {
-	fs := filesystem.NewOSFilesystem(dir)
-	fileFinder := unstructured.NewGenericFileFinder(contentTyper, fs)
-	fsRaw, err := filesystem.NewGeneric(fileFinder, namespacer)
+type ManifestBuilder struct {
+	Directory    string
+	ContentTyper filesystem.ContentTyper
+	Namespacer   storage.Namespacer
+	Recognizer   unstructured.ObjectRecognizer
+	PathExcluder filesystem.PathExcluder
+}
+
+var _ StorageBuilder = ManifestBuilder{}
+
+func (b ManifestBuilder) MakeUnstructuredEventStorage() (Storage, error) {
+	fs := filesystem.NewOSFilesystem(b.Directory)
+	fileFinder := unstructured.NewGenericFileFinder(b.ContentTyper, fs)
+	fsRaw, err := filesystem.NewGeneric(fileFinder, b.Namespacer)
 	if err != nil {
 		return nil, err
 	}
-	emitter, err := inotify.NewFileWatcher(dir, &inotify.FileWatcherOptions{
-		PathExcluder: pathExcluder,
+	emitter, err := inotify.NewFileWatcher(b.Directory, &inotify.FileWatcherOptions{
+		PathExcluder: b.PathExcluder,
 	})
 	if err != nil {
 		return nil, err
 	}
-	unstructuredRaw, err := unstructured.NewGeneric(fsRaw, recognizer, pathExcluder, serializer.NewFrameReaderFactory())
+	unstructuredRaw, err := unstructured.NewGeneric(fsRaw, b.Recognizer, b.PathExcluder, serializer.NewFrameReaderFactory())
 	if err != nil {
 		return nil, err
 	}
@@ -60,10 +70,31 @@ func NewManifest(
 	})
 }
 
+func (b ManifestBuilder) MakeUnstructuredStorage() (unstructured.Storage, error) {
+	return b.MakeUnstructuredEventStorage()
+}
+
+func (b ManifestBuilder) MakeFileEventsStorage() (fileevents.Storage, error) {
+	return b.MakeUnstructuredEventStorage()
+}
+
+func (b ManifestBuilder) MakeFilesystemStorage() (filesystem.Storage, error) {
+	return b.MakeUnstructuredEventStorage()
+}
+
+func (b ManifestBuilder) MakeStorage() (storage.Storage, error) {
+	return b.MakeUnstructuredEventStorage()
+}
+
+func (b ManifestBuilder) MakeEventStorage() (event.Storage, error) {
+	return b.MakeUnstructuredEventStorage()
+}
+
 // NewGeneric is an extended Storage implementation, which
 // together with the provided ObjectRecognizer and FileEventsEmitter listens for
 // file events, keeps the mappings of the unstructured.Storage's unstructured.FileFinder
 // in sync, and sends high-level ObjectEvents upstream.
+// TODO: GenericBuilder
 func NewGeneric(
 	s unstructured.Storage,
 	emitter fileevents.Emitter,

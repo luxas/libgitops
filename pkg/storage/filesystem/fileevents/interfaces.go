@@ -48,3 +48,9 @@ type Storage interface {
 	// FileEventsEmitter gets the Emitter used internally.
 	FileEventsEmitter() Emitter
 }
+
+type StorageBuilder interface {
+	MakeFileEventsStorage() (Storage, error)
+	filesystem.StorageBuilder
+	event.StorageBuilder
+}
