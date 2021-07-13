@@ -6,6 +6,7 @@ import (
 )
 
 // DefaultMaxFrames specifies the default maximum of frames that can be read or written by a Reader or Writer.
+// TODO: Make different defaults for Reads and Writes.
 const DefaultMaxFrames = 1024
 
 //
@@ -62,6 +63,8 @@ func (o *ReaderOptions) ApplyOptions(opts []ReaderOption) *ReaderOptions {
 func defaultWriterOpts() *WriterOptions {
 	return &WriterOptions{
 		ReaderWriterOptions: ReaderWriterOptions{
+			// TODO: Support "infinite writes" if MaxFrameSize is negative (for both readers and writers?)
+			// Make an "infinite" constant being -1.
 			MaxFrameSize: DefaultMaxFrameSize,
 			MaxFrames:    DefaultMaxFrames,
 			Sanitizer:    DefaultSanitizer{},

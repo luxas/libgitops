@@ -15,6 +15,8 @@ func newYAMLReader(rc io.ReadCloser, opts *ReaderOptions) Reader {
 	// Limit the amount of bytes that can be read from the underlying io.ReadCloser.
 	// Allow reading 4 bytes more than the maximum frame size, because the "---\n"
 	// also counts for the IoLimitedReader.
+	// TODO: Fix the upstream YAMLReader to not return "---\n" in the Read call if that's
+	// in the beginning of the stream.
 	lr := NewIoLimitedReader(rc, maxFrameSize+4)
 	// Construct the YAMLReader using a *bufio.Reader and the IoLimitedReader.
 	return &yamlReader{

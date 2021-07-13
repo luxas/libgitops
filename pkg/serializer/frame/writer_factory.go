@@ -32,11 +32,11 @@ func (DefaultFactory) newFromWriteCloser(framingType FramingType, wc io.WriteClo
 		return newDelegatingWriter(framingType, json.YAMLFramer.NewFrameWriter(wc), wc, o)
 	case FramingTypeJSON:
 		return newDelegatingWriter(framingType, json.Framer.NewFrameWriter(wc), wc, o)
+	case FramingTypeSingle:
+		// Unconditionally set MaxFrames to 1
+		o.MaxFrames = 1
+		return newSingleWriter(framingType, wc, o)
 	default:
-		// If only one frame is allowed, there is no need to frame.
-		if o.MaxFrames == 1 {
-			return newSingleWriter(framingType, wc, o)
-		}
 		return newErrWriter(framingType, MakeUnsupportedFramingTypeError(framingType))
 	}
 }

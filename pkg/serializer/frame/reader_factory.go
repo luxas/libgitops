@@ -41,11 +41,11 @@ func (DefaultFactory) lowlevelFromReadCloser(framingType FramingType, rc io.Read
 		return newYAMLReader(rc, o)
 	case FramingTypeJSON:
 		return newJSONReader(rc, o)
+	case FramingTypeSingle:
+		// Unconditionally set MaxFrames to 1
+		o.MaxFrames = 1
+		return newSingleReader(framingType, rc, o)
 	default:
-		// If only one frame is allowed, there is no need to frame.
-		if o.MaxFrames == 1 {
-			return newSingleReader(framingType, rc, o)
-		}
 		return newErrReader(framingType, MakeUnsupportedFramingTypeError(framingType))
 	}
 }

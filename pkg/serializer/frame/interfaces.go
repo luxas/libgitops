@@ -37,14 +37,17 @@ type Closer interface {
 //
 // The Reader MUST be thread-safe, i.e. it must use the underlying io.Reader responsibly
 // without causing race conditions when reading, e.g. by guarding reads with a mutual
-// exclusion lock (mutex). The mutex isn't locked for closes, however.
+// exclusion lock (mutex). The mutex isn't locked for closes, however. This enables e.g. closing the
+// reader during a read operation, and other custom closing behaviors.
 //
 // The Reader MUST directly abort the read operation if the frame size exceeds
 // ReadWriterOptions.MaxFrameSize, and return ErrFrameSizeOverflow.
 //
 // The Reader MUST return ErrFrameCountOverflow if the underlying Reader has returned more than
-// ReadWriterOptions.MaxFrames successful read operations. Returned errors (including io.EOF)
-// MUST be checked for equality using errors.Is(err, target), NOT using err == target.
+// ReadWriterOptions.MaxFrames successful read operations. The "total" frame limit is
+// 10 * ReadWriterOptions.MaxFrames, which includes failed, empty and successful frames.
+// Returned errors (including io.EOF) MUST be checked for equality using
+// errors.Is(err, target), NOT using err == target.
 //
 // The Reader MAY respect cancellation signals on the context, depending on ReaderOptions.
 // The Reader MAY support reporting trace spans for how long certain operations take.
@@ -86,13 +89,15 @@ type ReaderFactory interface {
 // It is valid (but not recommended) to supply empty frames to the Writer.
 //
 // Writer will only call the underlying io.Write(Close)r's Write(p []byte) call once.
-// If n < len(frame) and err == nil, io.ErrShortBuffer will be returned.
+// If n < len(frame) and err == nil, io.ErrShortWrite will be returned. This means that
+// it's the underlying io.Writer's responsibility to buffer the frame data, if needed.
 //
 // The Writer MUST be thread-safe, i.e. it must use the underlying io.Writer responsibly
 // without causing race conditions when reading, e.g. by guarding writes/closes with a
 // mutual exclusion lock (mutex). The mutex isn't locked for closes, however.
+// This enables e.g. closing the writer during a write operation, and other custom closing behaviors.
 //
-// The Writer MUST directly abort the read operation if the frame size exceeds ReadWriterOptions.MaxFrameSize,
+// The Writer MUST directly abort the write operation if the frame size exceeds ReadWriterOptions.MaxFrameSize,
 // and return ErrFrameSizeOverflow. The Writer MUST ignore empty frames, where len(frame) == 0, possibly
 // after sanitation. The Writer MUST return ErrFrameCountOverflow if WriteFrame has been called more than
 // ReadWriterOptions.MaxFrames times.

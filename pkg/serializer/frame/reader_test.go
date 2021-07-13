@@ -12,6 +12,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TODO: Make sure that len(frame) == 0 when err != nil for the Writer.
+
 // TODO: Test the output traces more througoutly, when there is SpanProcessor that supports writing
 // relevant data to a file, and do matching between spans.
 

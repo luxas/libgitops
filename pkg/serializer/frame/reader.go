@@ -27,7 +27,6 @@ type highlevelReader struct {
 	// readMu guards read.ReadFrame
 	readMu *sync.Mutex
 
-	//res       closableResource
 	opts      *ReaderOptions
 	hasCloser bool
 	// maxTotalFrames is set to opts.MaxFrames * 10

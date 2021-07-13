@@ -95,6 +95,8 @@ func (l *ioLimitedReader) Read(b []byte) (int, error) {
 
 		// Return the error from the read, if any. The most common error here is io.EOF.
 		if err != nil {
+			// TODO: This needs to have return 0, err actually.
+			// How to deal with the k8s streaming reader?
 			return tmpn, err
 		}
 		// Safeguard against a faulty reader. It's invalid to return tmpn == 0 and err == nil.

@@ -29,6 +29,14 @@ const (
 	// FramingTypeYAML specifies usage of YAML as the framing type.
 	// It is an alias for k8s.io/apimachinery/pkg/runtime.ContentTypeYAML
 	FramingTypeYAML = FramingType(runtime.ContentTypeYAML)
+
+	// FramingTypeSingle specifies usage of no framing at all, suitable
+	// for when only one frame needs to be read or written. Usage of this
+	// framing type automatically sets ReaderWriterOptions.MaxFrames = 1.
+	FramingTypeSingle = FramingType("single")
+
+	// TODO: At some point, allow many types of underlying readers that satisfy
+	// the "return io.ErrShortBuffer when a frame is still left" pattern.
 )
 
 func (ct FramingType) FramingType() FramingType     { return ct }
