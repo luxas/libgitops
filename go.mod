@@ -13,6 +13,9 @@ require (
 	github.com/fluxcd/go-git-providers v0.0.2
 	github.com/fluxcd/toolkit v0.0.1-beta.2
 	github.com/go-git/go-git/v5 v5.1.0
+	// Keep this in sync with Kubernetes by checking
+	// https://github.com/kubernetes-sigs/controller-runtime/blob/v0.9.2/go.mod
+	github.com/go-logr/logr v0.4.0
 	github.com/go-openapi/spec v0.19.8
 	github.com/google/go-cmp v0.5.6
 	github.com/google/go-github/v32 v32.1.0

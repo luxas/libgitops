@@ -1,15 +1,6 @@
 package tracing
 
-import (
-	"testing"
-
-	"github.com/stretchr/testify/assert"
-	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/trace"
-	"k8s.io/utils/pointer"
-)
-
-func TestTracerOptions_getTracer(t *testing.T) {
+/*func TestTracerOptions_getTracer(t *testing.T) {
 	tests := []struct {
 		name   string
 		global trace.TracerProvider
@@ -71,3 +62,4 @@ type customTp struct{}
 func (customTp) Tracer(instrumentationName string, opts ...trace.TracerOption) trace.Tracer {
 	return trace.NewNoopTracerProvider().Tracer("custom-" + instrumentationName)
 }
+*/

@@ -1,8 +1,7 @@
 package frame
 
 import (
-	"github.com/weaveworks/libgitops/pkg/tracing"
-	"k8s.io/utils/pointer"
+	"github.com/weaveworks/libgitops/pkg/serializer/frame/content"
 )
 
 // DefaultMaxFrames specifies the default maximum of frames that can be read or written by a Reader or Writer.
@@ -17,13 +16,9 @@ const DefaultMaxFrames = 1024
 func defaultReaderOpts() *ReaderOptions {
 	return &ReaderOptions{
 		ReaderWriterOptions: ReaderWriterOptions{
-			MaxFrameSize: DefaultMaxFrameSize,
+			MaxFrameSize: content.DefaultMaxFrameSize,
 			MaxFrames:    DefaultMaxFrames,
 			Sanitizer:    DefaultSanitizer{},
-			Tracer: tracing.TracerOptions{
-				Name:      readerPrefix,
-				UseGlobal: pointer.BoolPtr(true),
-			},
 		},
 	}
 }
@@ -65,13 +60,9 @@ func defaultWriterOpts() *WriterOptions {
 		ReaderWriterOptions: ReaderWriterOptions{
 			// TODO: Support "infinite writes" if MaxFrameSize is negative (for both readers and writers?)
 			// Make an "infinite" constant being -1.
-			MaxFrameSize: DefaultMaxFrameSize,
+			MaxFrameSize: content.DefaultMaxFrameSize,
 			MaxFrames:    DefaultMaxFrames,
 			Sanitizer:    DefaultSanitizer{},
-			Tracer: tracing.TracerOptions{
-				Name:      writerPrefix,
-				UseGlobal: pointer.BoolPtr(true),
-			},
 		},
 	}
 }
@@ -128,8 +119,6 @@ type ReaderWriterOptions struct {
 	MaxFrames int64
 	// Sanitizer configures the sanitizer that should be used for sanitizing the frames.
 	Sanitizer Sanitizer
-	// TracerOptions is embedded for reporting trace spans upstream
-	Tracer tracing.TracerOptions
 }
 
 // ReaderWriterOptions implements the ReaderOption and WriterOption interfaces.
@@ -143,7 +132,6 @@ func (o *ReaderWriterOptions) applyCommon(target *ReaderWriterOptions) {
 	if o.MaxFrames != 0 {
 		target.MaxFrames = o.MaxFrames
 	}
-	o.Tracer.ApplyToTracer(&target.Tracer)
 }
 
 func (o *ReaderWriterOptions) ApplyToReader(target *ReaderOptions) {

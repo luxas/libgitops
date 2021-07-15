@@ -4,22 +4,17 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
+	"os"
 
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/multierr"
+	"k8s.io/utils/pointer"
 )
 
-// TODO: Make a Composite tracer that mocks the span such that logs are output as soon as
-// the span is changed (or when it's ended) => logr or some similar backend
-// or a SpanProcessor that outputs logs based on incoming traces
 // TODO: Make a SpanProcessor that can output relevant YAML based on what's happening, for
 // unit testing.
-
-// TracerOption is a functional interface for TracerOptions
-type TracerOption interface {
-	ApplyToTracer(target *TracerOptions)
-}
 
 // FuncTracer is a higher-level type than the core trace.Tracer, which allows instrumenting
 // a function running in a closure. It'll automatically create a span with the given name
@@ -30,6 +25,60 @@ type FuncTracer interface {
 	// TraceFunc creates a trace with the given name while fn is executing.
 	// ErrFuncNotSupplied is returned if fn is nil.
 	TraceFunc(ctx context.Context, spanName string, fn TraceFunc, opts ...trace.SpanStartOption) TraceFuncResult
+}
+
+// FuncTracerFromGlobal returns a new FuncTracer with the given name that uses the globally-registered
+// tracing provider.
+func FuncTracerFromGlobal(name string) FuncTracer {
+	return TracerOptions{Name: name, UseGlobal: pointer.Bool(true)}
+}
+
+// BackgroundTracingContext
+func BackgroundTracingContext() context.Context {
+	ctx := context.Background()
+	noopSpan := trace.SpanFromContext(ctx)
+	return trace.ContextWithSpan(ctx, &tracerProviderSpan{noopSpan, true})
+}
+
+type tracerProviderSpan struct {
+	trace.Span
+	useGlobal bool
+}
+
+// Override the TracerProvider call if useGlobal is set
+func (s *tracerProviderSpan) TracerProvider() trace.TracerProvider {
+	if s.useGlobal {
+		return otel.GetTracerProvider()
+	}
+	return s.Span.TracerProvider()
+}
+
+type TracerNamed interface {
+	TracerName() string
+}
+
+//
+func FuncTracerFromContext(ctx context.Context, obj interface{}) FuncTracer {
+	name := "<unknown>"
+	tr, ok := obj.(TracerNamed)
+	if ok {
+		name = tr.TracerName()
+	} else if obj != nil {
+		name = fmt.Sprintf("%T", obj)
+	}
+
+	switch obj {
+	case os.Stdin:
+		name = "os.Stdin"
+	case os.Stdout:
+		name = "os.Stdout"
+	case os.Stderr:
+		name = "os.Stderr"
+	case io.Discard:
+		name = "io.Discard"
+	}
+
+	return TracerOptions{Name: name, provider: trace.SpanFromContext(ctx).TracerProvider()}
 }
 
 // TraceFuncResult can either just simply return the error from TraceFunc, or register the error using
@@ -60,7 +109,7 @@ type TraceFunc func(context.Context, trace.Span) error
 type ErrRegisterFunc func(span trace.Span, err error) error
 
 // TracerOptions implements TracerOption, trace.Tracer and FuncTracer.
-var _ TracerOption = TracerOptions{}
+//var _ TracerOption = TracerOptions{}
 var _ trace.Tracer = TracerOptions{}
 var _ FuncTracer = TracerOptions{}
 
@@ -71,7 +120,7 @@ type TracerOptions struct {
 	// as the name of the trace.Tracer.
 	Name string
 	// UseGlobal specifies to default to the global tracing provider if true
-	// (or, just use a no-op TracerProvider, if false). This only applies to if neither
+	// (or, just use a no-op TracerProvider, if false). This only applies if neither
 	// WithTracer or WithTracerProvider have been supplied.
 	UseGlobal *bool
 	// provider is what TracerProvider to use for creating a tracer. If nil,
@@ -102,10 +151,15 @@ func (o TracerOptions) ApplyToTracer(target *TracerOptions) {
 // the name of the span, which will then be of the form "{o.Name}.{spanName}",
 // or just "{spanName}".
 func (o TracerOptions) fmtSpanName(spanName string) string {
-	if len(o.Name) == 0 {
-		return spanName
+	if len(o.Name) != 0 && len(spanName) != 0 {
+		return o.Name + "." + spanName
 	}
-	return o.Name + "." + spanName
+	// As either (or both) o.Name and spanName are empty strings, we can add them together
+	name := o.Name + spanName
+	if len(name) != 0 {
+		return name
+	}
+	return "unnamed_span"
 }
 
 func (o TracerOptions) tracerProvider() trace.TracerProvider {
@@ -119,11 +173,10 @@ func (o TracerOptions) tracerProvider() trace.TracerProvider {
 }
 
 func (o TracerOptions) getTracer() trace.Tracer {
-	if o.tracer != nil {
-		return o.tracer
-	} else {
-		return o.tracerProvider().Tracer(o.Name)
+	if o.tracer == nil {
+		o.tracer = o.tracerProvider().Tracer(o.Name)
 	}
+	return o.tracer
 }
 
 func (o TracerOptions) Start(ctx context.Context, spanName string, opts ...trace.SpanStartOption) (context.Context, trace.Span) {
@@ -132,7 +185,8 @@ func (o TracerOptions) Start(ctx context.Context, spanName string, opts ...trace
 
 func (o TracerOptions) TraceFunc(ctx context.Context, spanName string, fn TraceFunc, opts ...trace.SpanStartOption) TraceFuncResult {
 	ctx, span := o.Start(ctx, spanName, opts...)
-	defer span.End()
+	// Close the span first in the returned TraceFuncResult, to be able to register the error before
+	// the span stops recording
 
 	// Catch if fn == nil
 	if fn == nil {
@@ -142,12 +196,16 @@ func (o TracerOptions) TraceFunc(ctx context.Context, spanName string, fn TraceF
 	return &traceFuncResult{fn(ctx, span), span}
 }
 
+// IMPORTANT TO DOCUMENT: Always call one of the given functions, otherwise the span won't be
+// closed
 type traceFuncResult struct {
 	err  error
 	span trace.Span
 }
 
 func (r *traceFuncResult) Error() error {
+	// Important: Remember to end the span
+	r.span.End()
 	return r.err
 }
 
@@ -162,7 +220,11 @@ func (r *traceFuncResult) RegisterCustom(fn ErrRegisterFunc) error {
 		return DefaultErrRegisterFunc(r.span, err)
 	}
 
-	return fn(r.span, r.err)
+	// Register the error with the span, and potentially process it.
+	err := fn(r.span, r.err)
+	// Important: Remember to end the span
+	r.span.End()
+	return err
 }
 
 // DefaultErrRegisterFunc registers the error with the span using span.RecordError(err)
@@ -172,16 +234,4 @@ func DefaultErrRegisterFunc(span trace.Span, err error) error {
 		span.RecordError(err)
 	}
 	return err
-}
-
-// WithTracer returns a TracerOption which sets the tracer to TracerOptions explicitely.
-func WithTracer(t trace.Tracer) TracerOption {
-	return TracerOptions{tracer: t}
-}
-
-// WithTracerProvider returns a TracerOption which sets the tracing provider to TracerOptions.
-// Unless WithTracer is also supplied, this TracerProvider will be used to create the tracer for
-// TracerOptions.
-func WithTracerProvider(tp trace.TracerProvider) TracerOption {
-	return TracerOptions{provider: tp}
 }

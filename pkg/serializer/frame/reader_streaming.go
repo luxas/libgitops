@@ -5,14 +5,18 @@ import (
 	"errors"
 	"io"
 
+	"github.com/weaveworks/libgitops/pkg/serializer/frame/content"
 	"k8s.io/apimachinery/pkg/runtime/serializer/json"
 	"k8s.io/apimachinery/pkg/runtime/serializer/streaming"
 )
 
 // newJSONReader creates a "low-level" JSON Reader from the given io.ReadCloser.
-func newJSONReader(rc io.ReadCloser, o *ReaderOptions) Reader {
+func newJSONReader(r content.Reader, o *ReaderOptions) Reader {
 	// json.Framer.NewFrameReader takes care of the actual JSON framing logic
-	return newStreamingReader(FramingTypeJSON, json.Framer.NewFrameReader(rc), o)
+	r = r.Wrap(func(underlying io.ReadCloser) io.Reader {
+		return json.Framer.NewFrameReader(underlying)
+	})
+	return newStreamingReader(FramingTypeJSON, r, o)
 }
 
 // newStreamingReader makes a generic Reader that reads from an io.ReadCloser returned
@@ -24,20 +28,20 @@ func newJSONReader(rc io.ReadCloser, o *ReaderOptions) Reader {
 //
 // Note: This Reader is a so-called "low-level" one. It doesn't do tracing, mutex locking, or
 // proper closing logic. It must be wrapped by a composite, high-level Reader like highlevelReader.
-func newStreamingReader(framingType FramingType, rc io.ReadCloser, o *ReaderOptions) Reader {
-	// Limit the amount of bytes that can be read in one frame
-	lr := NewIoLimitedReader(rc, o.MaxFrameSize)
+func newStreamingReader(framingType FramingType, r content.Reader, o *ReaderOptions) Reader {
+	// Limit the amount of bytes read from the content.Reader
+	r, resetCounter := content.WrapLimited(r, o.MaxFrameSize)
+	// Wrap
+	cr := r.WrapSegment(func(rc io.ReadCloser) content.RawSegmentReader {
+		return newK8sStreamingReader(rc, o.MaxFrameSize)
+	})
+
 	return &streamingReader{
 		FramingTyped: framingType.ToFramingTyped(),
-		lr:           lr,
-		streamReader: newK8sStreamingReader(ioReadCloser{lr, rc}, o.MaxFrameSize),
+		resetCounter: resetCounter,
+		cr:           cr,
 		maxFrameSize: o.MaxFrameSize,
 	}
-}
-
-type ioReadCloser struct {
-	io.Reader
-	io.Closer
 }
 
 // streamingReader is a small "conversion" struct that implements the Reader interface for a
@@ -45,28 +49,28 @@ type ioReadCloser struct {
 // temporary k8sStreamingReader interface with a "proper" Kubernetes one.
 type streamingReader struct {
 	FramingTyped
-	lr           IoLimitedReader
-	streamReader k8sStreamingReader
+	resetCounter content.ResetCounterFunc
+	cr           content.SegmentReader
 	maxFrameSize int64
 }
 
-func (r *streamingReader) ReadFrame(context.Context) ([]byte, error) {
+func (r *streamingReader) ReadFrame(ctx context.Context) ([]byte, error) {
 	// Read one frame from the streamReader
-	frame, err := r.streamReader.Read()
+	frame, err := r.cr.WithContext(ctx).Read()
 	if err != nil {
 		// Transform streaming.ErrObjectTooLarge to a ErrFrameSizeOverflow, if returned.
 		return nil, mapError(err, errorMappings{
 			streaming.ErrObjectTooLarge: func() error {
-				return MakeFrameSizeOverflowError(r.maxFrameSize)
+				return content.MakeFrameSizeOverflowError(r.maxFrameSize)
 			},
 		})
 	}
 	// Reset the counter only when we have a successful frame
-	r.lr.ResetCounter()
+	r.resetCounter()
 	return frame, nil
 }
 
-func (r *streamingReader) Close(context.Context) error { return r.streamReader.Close() }
+func (r *streamingReader) Close(ctx context.Context) error { return r.cr.WithContext(ctx).Close() }
 
 // mapError is an utility for mapping a "actual" error to a lazily-evaluated "desired" one.
 // Equality between the errorMappings' keys and err is defined by errors.Is

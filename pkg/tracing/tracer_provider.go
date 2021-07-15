@@ -2,8 +2,6 @@ package tracing
 
 import (
 	"context"
-	"errors"
-	"fmt"
 	"time"
 
 	"go.opentelemetry.io/otel"
@@ -18,14 +16,10 @@ import (
 	"go.uber.org/multierr"
 )
 
-var (
-	// ErrUnrecognizedTracerProvider is returned if the global TracingProvider is not supported.
-	ErrUnrecognizedTracerProvider = errors.New("could not recognize the global OTel TracerProvider, only *tracesdk.TracerProvider supported")
-)
-
-// MakeUnrecognizedTracerProviderError formats ErrUnrecognizedTracerProvider in a standard way.
-func MakeUnrecognizedTracerProviderError(tp trace.TracerProvider) error {
-	return fmt.Errorf("%w: got type %T", ErrUnrecognizedTracerProvider, tp)
+type SDKTracerProvider interface {
+	trace.TracerProvider
+	Shutdown(ctx context.Context) error
+	ForceFlush(ctx context.Context) error
 }
 
 // NewBuilder returns a new TracerProviderBuilder instance.
@@ -33,7 +27,7 @@ func NewBuilder() TracerProviderBuilder {
 	return &builder{}
 }
 
-// TracerProviderBuilder is a builder for a tracesdk.TracerProvider.
+// TracerProviderBuilder is a builder for a TracerProviderWithShutdown.
 type TracerProviderBuilder interface {
 	// RegisterInsecureOTelExporter registers an exporter to an OpenTelemetry Collector on the
 	// given address, which defaults to "localhost:55680" if addr is empty. The OpenTelemetry
@@ -64,8 +58,10 @@ type TracerProviderBuilder interface {
 	// (which must be used ONLY for testing) or (by default) the batching mode.
 	WithSynchronousExports(sync bool) TracerProviderBuilder
 
-	// Build builds the TracerProvider.
-	Build() (*tracesdk.TracerProvider, error)
+	WithLogging(log bool) TracerProviderBuilder
+
+	// Build builds the SDKTracerProvider.
+	Build() (SDKTracerProvider, error)
 
 	// InstallGlobally builds the TracerProvider and registers it globally using otel.SetTracerProvider(tp).
 	InstallGlobally() error
@@ -77,6 +73,7 @@ type builder struct {
 	tpOpts    []tracesdk.TracerProviderOption
 	attrs     []attribute.KeyValue
 	sync      bool
+	log       bool
 }
 
 func (b *builder) RegisterInsecureOTelExporter(ctx context.Context, addr string, opts ...otlptracegrpc.Option) TracerProviderBuilder {
@@ -140,7 +137,12 @@ func (b *builder) WithSynchronousExports(sync bool) TracerProviderBuilder {
 	return b
 }
 
-func (b *builder) Build() (*tracesdk.TracerProvider, error) {
+func (b *builder) WithLogging(log bool) TracerProviderBuilder {
+	b.log = log
+	return b
+}
+
+func (b *builder) Build() (SDKTracerProvider, error) {
 	// Combine and filter the errors from the exporter building
 	if err := multierr.Combine(b.errs...); err != nil {
 		return nil, err
@@ -173,7 +175,11 @@ func (b *builder) Build() (*tracesdk.TracerProvider, error) {
 	// Make sure to order the defaultTpOpts first, so b.tpOpts can override the default ones
 	opts := append(defaultTpOpts, b.tpOpts...)
 	// Build the tracing provider
-	return tracesdk.NewTracerProvider(opts...), nil
+	tpsdk := tracesdk.NewTracerProvider(opts...)
+	if b.log {
+		return NewLoggingTracerProvider(tpsdk), nil
+	}
+	return tpsdk, nil
 }
 
 func (b *builder) InstallGlobally() error {
@@ -187,14 +193,31 @@ func (b *builder) InstallGlobally() error {
 	return nil
 }
 
-// Shutdown tries to convert the trace.TracerProvider to a *tracesdk.TracerProvider to
+// Shutdown tries to convert the trace.TracerProvider to a SDKTracerProvider to
 // access its Shutdown method to make sure all traces have been flushed using the exporters
 // before it's shutdown. If timeout == 0, the shutdown will be done without a grace period.
 // If timeout > 0, the shutdown will have a grace period of that period of time to shutdown.
 func Shutdown(ctx context.Context, tp trace.TracerProvider, timeout time.Duration) error {
-	p, ok := tp.(*tracesdk.TracerProvider)
+	return callSDKProvider(ctx, tp, timeout, func(ctx context.Context, sp SDKTracerProvider) error {
+		return sp.Shutdown(ctx)
+	})
+}
+
+// ForceFlush tries to convert the trace.TracerProvider to a SDKTracerProvider to
+// access its ForceFlush method to make sure all traces have been flushed using the exporters.
+// If timeout == 0, the flushing will be done without a grace period.
+// If timeout > 0, the flushing will have a grace period of that period of time.
+// Unlike Shutdown, which also flushes the traces, the provider is still operation after this.
+func ForceFlush(ctx context.Context, tp trace.TracerProvider, timeout time.Duration) error {
+	return callSDKProvider(ctx, tp, timeout, func(ctx context.Context, sp SDKTracerProvider) error {
+		return sp.ForceFlush(ctx)
+	})
+}
+
+func callSDKProvider(ctx context.Context, tp trace.TracerProvider, timeout time.Duration, fn func(context.Context, SDKTracerProvider) error) error {
+	p, ok := tp.(SDKTracerProvider)
 	if !ok {
-		return MakeUnrecognizedTracerProviderError(tp)
+		return nil
 	}
 
 	if timeout != 0 {
@@ -204,10 +227,15 @@ func Shutdown(ctx context.Context, tp trace.TracerProvider, timeout time.Duratio
 		defer cancel()
 	}
 
-	return p.Shutdown(ctx)
+	return fn(ctx, p)
 }
 
 // ShutdownGlobal shuts down the global TracerProvider using Shutdown()
 func ShutdownGlobal(ctx context.Context, timeout time.Duration) error {
 	return Shutdown(ctx, otel.GetTracerProvider(), timeout)
+}
+
+// ForceFlushGlobal flushes the global TracerProvider using ForceFlush()
+func ForceFlushGlobal(ctx context.Context, timeout time.Duration) error {
+	return ForceFlush(ctx, otel.GetTracerProvider(), timeout)
 }

@@ -30,20 +30,14 @@ import (
 	"fmt"
 	"io"
 
+	"github.com/weaveworks/libgitops/pkg/serializer/frame/content"
 	"k8s.io/apimachinery/pkg/runtime/serializer/streaming"
 )
 
-// k8sStreamingReader is an interface used to access the reading frames from the underlying
-// io.ReadCloser. This interface should eventually make its way into Kubernetes.
-type k8sStreamingReader interface {
-	Read() ([]byte, error)
-	io.Closer
-}
-
 // Ref: https://github.com/kubernetes/apimachinery/blob/v0.21.2/pkg/runtime/serializer/streaming/streaming.go#L63-L67
-func newK8sStreamingReader(rc io.ReadCloser, maxFrameSize int64) k8sStreamingReader {
+func newK8sStreamingReader(rc io.ReadCloser, maxFrameSize int64) content.ClosableRawSegmentReader {
 	if maxFrameSize == 0 {
-		maxFrameSize = DefaultMaxFrameSize
+		maxFrameSize = content.DefaultMaxFrameSize
 	}
 
 	return &k8sStreamingReaderImpl{

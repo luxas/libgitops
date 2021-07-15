@@ -3,20 +3,23 @@ package frame
 import (
 	"context"
 	"io"
+
+	"github.com/weaveworks/libgitops/pkg/serializer/frame/content"
 )
 
-func newSingleReader(framingType FramingType, rc io.ReadCloser, o *ReaderOptions) Reader {
+func newSingleReader(framingType FramingType, r content.Reader, o *ReaderOptions) Reader {
+	// Make sure not more than this set of bytes can be read
+	r, _ = content.WrapLimited(r, o.MaxFrameSize)
 	return &singleReader{
 		FramingTyped: framingType.ToFramingTyped(),
-		r:            NewIoLimitedReader(rc, o.MaxFrameSize),
-		c:            rc,
+		r:            r,
 	}
 }
 
-func newSingleWriter(framingType FramingType, wc io.WriteCloser, _ *WriterOptions) Writer {
+func newSingleWriter(framingType FramingType, w content.Writer, _ *WriterOptions) Writer {
 	return &singleWriter{
 		FramingTyped: framingType.ToFramingTyped(),
-		wc:           wc,
+		w:            w,
 	}
 }
 
@@ -25,17 +28,16 @@ func newSingleWriter(framingType FramingType, wc io.WriteCloser, _ *WriterOption
 // Reader interface correctly.
 type singleReader struct {
 	FramingTyped
-	r           IoLimitedReader
-	c           io.Closer
+	r           content.Reader
 	hasBeenRead bool
 }
 
 // Read the whole frame from the underlying io.Reader, up to a given limit
-func (r *singleReader) ReadFrame(context.Context) ([]byte, error) {
+func (r *singleReader) ReadFrame(ctx context.Context) ([]byte, error) {
 	// Only allow reading once
 	if !r.hasBeenRead {
 		// Read the whole frame from the underlying io.Reader, up to a given amount
-		frame, err := io.ReadAll(r.r)
+		frame, err := io.ReadAll(r.r.WithContext(ctx))
 		// Mark we have read the frame
 		r.hasBeenRead = true
 		return frame, err
@@ -43,22 +45,22 @@ func (r *singleReader) ReadFrame(context.Context) ([]byte, error) {
 	return nil, io.EOF
 }
 
-func (r *singleReader) Close(context.Context) error { return r.c.Close() }
+func (r *singleReader) Close(ctx context.Context) error { return r.r.WithContext(ctx).Close() }
 
 // singleWriter implements writing a single frame to an io.WriteCloser.
 // It MUST be wrapped in a higher-level composite Reader like the highlevelWriter to satisfy the
 // Writer interface correctly.
 type singleWriter struct {
 	FramingTyped
-	wc             io.WriteCloser
+	w              content.Writer
 	hasBeenWritten bool
 }
 
-func (w *singleWriter) WriteFrame(_ context.Context, frame []byte) error {
+func (w *singleWriter) WriteFrame(ctx context.Context, frame []byte) error {
 	// Only allow writing once
 	if !w.hasBeenWritten {
 		// The first time, write the whole frame to the underlying writer
-		n, err := w.wc.Write(frame)
+		n, err := w.w.WithContext(ctx).Write(frame)
 		// Mark we have written the frame
 		w.hasBeenWritten = true
 		// Guard against short frames
@@ -71,4 +73,4 @@ func (w *singleWriter) WriteFrame(_ context.Context, frame []byte) error {
 	return io.ErrClosedPipe
 }
 
-func (w *singleWriter) Close(context.Context) error { return w.wc.Close() }
+func (w *singleWriter) Close(ctx context.Context) error { return w.w.WithContext(ctx).Close() }

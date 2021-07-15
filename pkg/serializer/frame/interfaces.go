@@ -2,8 +2,25 @@ package frame
 
 import (
 	"context"
-	"io"
+	"errors"
+	"fmt"
+
+	"github.com/weaveworks/libgitops/pkg/serializer/frame/content"
 )
+
+var (
+	// ErrFrameCountOverflow is returned when a Reader or Writer have processed too many
+	// frames.
+	ErrFrameCountOverflow = errors.New("the maximum amount of frames have been processed")
+)
+
+// MakeFrameCountOverflowError returns a wrapped ErrFrameCountOverflow along with
+// context in a normalized way.
+func MakeFrameCountOverflowError(maxFrames int64) error {
+	return fmt.Errorf("%w: %d", ErrFrameCountOverflow, maxFrames)
+}
+
+// TODO: Move this to pkg/frame instead of under the serializer
 
 // TODO: Maybe implement/use context-aware (cancellable) io.Readers and io.Writers underneath?
 
@@ -54,10 +71,15 @@ type Closer interface {
 type Reader interface {
 	// The Reader is specific to this framing type
 	FramingTyped
+
 	// ReadFrame reads one frame from the underlying io.Read(Clos)er. At maximum, the frame is as
 	// large as ReadWriterOptions.MaxFrameSize. See the documentation on the Reader interface for more
 	// details.
 	ReadFrame(ctx context.Context) ([]byte, error)
+
+	// Exposes Metadata about the underlying io.Reader
+	//content.MetadataBound
+
 	// The Reader can be closed. If an underlying io.Reader is used, this is a no-op. If an
 	// io.ReadCloser is used, this will close that io.ReadCloser.
 	Closer
@@ -73,7 +95,7 @@ type ReaderFactory interface {
 	// will close that io.ReadCloser.
 	// The ReaderFactory might allow any framingType as long as ReaderOptions.MaxFrames
 	// is 1, because then there might not be a need to perform framing.
-	NewReader(framingType FramingType, r io.Reader, opts ...ReaderOption) Reader
+	NewReader(framingType FramingType, r content.Reader, opts ...ReaderOption) Reader
 }
 
 // Writer is a framing type specific writer to an underlying io.Writer or io.WriteCloser.
@@ -112,6 +134,10 @@ type Writer interface {
 	// WriteFrame writes one frame to the underlying io.Write(Close)r.
 	// See the documentation on the Writer interface for more details.
 	WriteFrame(ctx context.Context, frame []byte) error
+
+	// Exposes Metadata about the underlying io.Writer
+	//content.MetadataBound
+
 	// The Writer can be closed. If an underlying io.Writer is used, this is a no-op. If an
 	// io.WriteCloser is used, this will close that io.WriteCloser.
 	Closer
@@ -126,7 +152,7 @@ type WriterFactory interface {
 	// will close that io.WriteCloser.
 	// The WriterFactory might allow any framingType as long as WriterOptions.MaxFrames
 	// is 1, because then there might not be a need to perform framing.
-	NewWriter(framingType FramingType, w io.Writer, opts ...WriterOption) Writer
+	NewWriter(framingType FramingType, w content.Writer, opts ...WriterOption) Writer
 }
 
 // Factory combines ReaderFactory and WriterFactory.

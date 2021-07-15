@@ -1,4 +1,4 @@
-package frame
+package content
 
 import (
 	"bytes"
@@ -14,21 +14,12 @@ var (
 	// ErrFrameSizeOverflow is returned from Reader.ReadFrame or Writer.WriteFrame when a
 	// frame exceeds the maximum allowed size.
 	ErrFrameSizeOverflow = errors.New("frame was larger than maximum allowed size")
-	// ErrFrameCountOverflow is returned when a Reader or Writer have processed too many
-	// frames.
-	ErrFrameCountOverflow = errors.New("the maximum amount of frames have been processed")
 )
 
 // MakeFrameSizeOverflowError returns a wrapped ErrFrameSizeOverflow along with
 // context in a normalized way.
 func MakeFrameSizeOverflowError(maxFrameSize int64) error {
 	return fmt.Errorf("%w %d bytes", ErrFrameSizeOverflow, maxFrameSize)
-}
-
-// MakeFrameCountOverflowError returns a wrapped ErrFrameCountOverflow along with
-// context in a normalized way.
-func MakeFrameCountOverflowError(maxFrames int64) error {
-	return fmt.Errorf("%w: %d", ErrFrameCountOverflow, maxFrames)
 }
 
 // IoLimitedReader is a specialized io.Reader helper type, which allows detecting when
@@ -56,12 +47,12 @@ func NewIoLimitedReader(r io.Reader, maxFrameSize int64) IoLimitedReader {
 	return &ioLimitedReader{
 		reader:       r,
 		buf:          new(bytes.Buffer),
-		maxFrameSize: defaultMaxFrameSize(maxFrameSize),
+		maxFrameSize: OrDefaultMaxFrameSize(maxFrameSize),
 	}
 }
 
-// defaultMaxFrameSize defaults maxFrameSize if unset
-func defaultMaxFrameSize(maxFrameSize int64) int64 {
+// OrDefaultMaxFrameSize defaults maxFrameSize if unset
+func OrDefaultMaxFrameSize(maxFrameSize int64) int64 {
 	// Default maxFrameSize if unset.
 	if maxFrameSize == 0 {
 		maxFrameSize = DefaultMaxFrameSize
@@ -129,3 +120,16 @@ func (l *ioLimitedReader) Read(b []byte) (int, error) {
 }
 
 func (r *ioLimitedReader) ResetCounter() { r.frameBytes = 0 }
+
+type ResetCounterFunc func()
+
+func WrapLimited(r Reader, maxFrameSize int64) (Reader, ResetCounterFunc) {
+	maxFrameSize = OrDefaultMaxFrameSize(maxFrameSize)
+	var reset ResetCounterFunc
+	limitedR := r.Wrap(func(underlying io.ReadCloser) io.Reader {
+		lr := NewIoLimitedReader(underlying, maxFrameSize)
+		reset = lr.ResetCounter
+		return lr
+	})
+	return limitedR, reset
+}

@@ -5,12 +5,34 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"os"
 	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/weaveworks/libgitops/pkg/serializer/frame/content"
+	"github.com/weaveworks/libgitops/pkg/tracing"
+	"go.opentelemetry.io/otel/trace"
+	"k8s.io/utils/pointer"
+	"sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 )
+
+func init() {
+	// Set up the global logger
+	log.SetLogger(zap.New()) // zap.JSONEncoder()
+
+	err := tracing.NewBuilder().
+		//RegisterStdoutExporter(stdouttrace.WithWriter(io.Discard)).
+		RegisterInsecureJaegerExporter("").
+		WithLogging(true).
+		InstallGlobally()
+	if err != nil {
+		fmt.Printf("foo")
+		os.Exit(1)
+	}
+}
 
 // TODO: Make sure that len(frame) == 0 when err != nil for the Writer.
 
@@ -98,6 +120,8 @@ func TestReader(t *testing.T) {
 	// Some tests depend on this
 	require.Equal(t, testYAMLlen, testJSONlen)
 	NewFactoryTester(t, DefaultFactory{}).Test()
+	assert.Nil(t, tracing.ForceFlushGlobal(context.Background(), 0))
+	t.Error("foo")
 }
 
 // TODO: Test that closing of Readers and Writers works
@@ -214,7 +238,7 @@ var defaultTestCases = []testcase{
 			{ct: FramingTypeJSON, rawData: testJSON},
 		},
 		readOpts:    []ReaderOption{&ReaderWriterOptions{MaxFrameSize: testYAMLlen - 1}},
-		readResults: []error{ErrFrameSizeOverflow},
+		readResults: []error{content.ErrFrameSizeOverflow},
 	},
 	{
 		name: "YAML Read: the frame is out of bounds, but continues on the next line",
@@ -222,7 +246,7 @@ var defaultTestCases = []testcase{
 			{ct: FramingTypeYAML, rawData: testYAML + testYAML},
 		},
 		readOpts:    []ReaderOption{&ReaderWriterOptions{MaxFrameSize: testYAMLlen}},
-		readResults: []error{ErrFrameSizeOverflow},
+		readResults: []error{content.ErrFrameSizeOverflow},
 	},
 	{
 		name: "Read: first frame ok, then always frame overflow",
@@ -231,7 +255,7 @@ var defaultTestCases = []testcase{
 			{ct: FramingTypeJSON, rawData: testJSON + testJSON2, frames: []string{testJSON}},
 		},
 		readOpts:    []ReaderOption{&ReaderWriterOptions{MaxFrameSize: testYAMLlen}},
-		readResults: []error{nil, ErrFrameSizeOverflow, ErrFrameSizeOverflow, ErrFrameSizeOverflow},
+		readResults: []error{nil, content.ErrFrameSizeOverflow, content.ErrFrameSizeOverflow, content.ErrFrameSizeOverflow},
 	},
 	{
 		name: "Write: the second frame is too large, ignore that, but allow writing smaller frames later",
@@ -240,7 +264,7 @@ var defaultTestCases = []testcase{
 			{ct: FramingTypeJSON, frames: []string{testJSON, testJSON2, testJSON}, rawData: testJSON + testJSON},
 		},
 		writeOpts:    []WriterOption{&ReaderWriterOptions{MaxFrameSize: testYAMLlen}},
-		writeResults: []error{nil, ErrFrameSizeOverflow, nil},
+		writeResults: []error{nil, content.ErrFrameSizeOverflow, nil},
 	},
 	{
 		name: "first frame ok, then Read => EOF and Write => nil consistently",
@@ -330,7 +354,7 @@ var defaultTestCases = []testcase{
 			{ct: otherCT, rawData: otherFrame},
 		},
 		readOpts:    []ReaderOption{&ReaderWriterOptions{MaxFrameSize: otherFrameLen - 1, MaxFrames: 1}},
-		readResults: []error{ErrFrameSizeOverflow, io.EOF, io.EOF},
+		readResults: []error{content.ErrFrameSizeOverflow, io.EOF, io.EOF},
 	},
 	{
 		name: "Write: other framing type frame size overflow",
@@ -338,7 +362,7 @@ var defaultTestCases = []testcase{
 			{ct: otherCT, frames: []string{otherFrame, otherFrame}},
 		},
 		writeOpts:    []WriterOption{&ReaderWriterOptions{MaxFrameSize: otherFrameLen - 1, MaxFrames: 1}},
-		writeResults: []error{ErrFrameSizeOverflow, ErrFrameSizeOverflow, nil},
+		writeResults: []error{content.ErrFrameSizeOverflow, content.ErrFrameSizeOverflow, nil},
 	},
 }
 
@@ -370,23 +394,30 @@ func (h *FactoryTester) testRoundtripCase(t *testing.T, c *testcase) {
 	wOpts := defaultWriterOpts().ApplyOptions(c.writeOpts)
 	rOpts := defaultReaderOpts().ApplyOptions(c.readOpts)
 
+	ctx := context.Background()
 	for i, data := range c.testdata {
-		t.Run(fmt.Sprintf("%d %s", i, data.ct), func(t *testing.T) {
-			h.testRoundtripCaseFramingType(t, c, &data, wOpts, rOpts)
+		subName := fmt.Sprintf("%d %s", i, data.ct)
+		t.Run(subName, func(t *testing.T) {
+			tr := tracing.TracerOptions{Name: fmt.Sprintf("%s %s", c.name, subName), UseGlobal: pointer.Bool(true)}
+			_ = tr.TraceFunc(ctx, "", func(ctx context.Context, _ trace.Span) error {
+				h.testRoundtripCaseFramingType(t, ctx, c, &data, wOpts, rOpts)
+				return nil
+			}).Register()
 		})
 	}
 }
 
-func (h *FactoryTester) testRoundtripCaseFramingType(t *testing.T, c *testcase, d *testdata, wOpts *WriterOptions, rOpts *ReaderOptions) {
+func (h *FactoryTester) testRoundtripCaseFramingType(t *testing.T, ctx context.Context, c *testcase, d *testdata, wOpts *WriterOptions, rOpts *ReaderOptions) {
 	var buf bytes.Buffer
 
 	readCloseCounter := &recordingCloser{}
 	writeCloseCounter := &recordingCloser{}
-	w := h.factory.NewWriter(d.ct, ioWriteCloser{&buf, writeCloseCounter}, wOpts)
+	cw := content.NewWriter(content.IoWriteCloser{Writer: &buf, Closer: writeCloseCounter})
+	cr := content.NewReader(content.IoReadCloser{Reader: &buf, Closer: readCloseCounter})
+	w := h.factory.NewWriter(d.ct, cw, wOpts)
 	assert.Equalf(t, w.FramingType(), d.ct, "Writer.FramingType")
-	r := h.factory.NewReader(d.ct, ioReadCloser{&buf, readCloseCounter}, rOpts)
+	r := h.factory.NewReader(d.ct, cr, rOpts)
 	assert.Equalf(t, r.FramingType(), d.ct, "Reader.FramingType")
-	ctx := context.Background()
 
 	// Write frames using the writer
 	for i, expected := range c.writeResults {
@@ -434,10 +465,10 @@ func (h *FactoryTester) testRoundtripCaseFramingType(t *testing.T, c *testcase, 
 	assert.Equalf(t, 0, readCloseCounter.count, "Reader should not be closed")
 }
 
-type ioWriteCloser struct {
+/*type ioWriteCloser struct {
 	io.Writer
 	io.Closer
-}
+}*/
 
 type recordingCloser struct {
 	count int

@@ -1,13 +1,10 @@
 package frame
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"io"
 	"io/ioutil"
-	"os"
-	"strings"
 	"testing/iotest"
 )
 
@@ -44,35 +41,13 @@ func WriteFrameList(ctx context.Context, fw Writer, frameList FrameList) error {
 	return nil
 }
 
-// FromFile returns an io.ReadCloser from the given file, or an io.ReadCloser which returns
-// the given file open error when read.
-func FromFile(filePath string) io.ReadCloser {
-	f, err := os.Open(filePath)
-	if err != nil {
-		return errIoReadCloser(err)
-	}
-	return f
-}
-
-// FromBytes returns an io.Reader from the given byte content.
-func FromBytes(content []byte) io.Reader {
-	return bytes.NewReader(content)
-}
-
-// FromString returns an io.Reader from the given string content.
-func FromString(content string) io.Reader {
-	return strings.NewReader(content)
-}
-
 func errIoReadCloser(err error) io.ReadCloser { return ioutil.NopCloser(iotest.ErrReader(err)) }
 
-func isStdio(s interface{}) bool {
-	f, ok := s.(*os.File)
-	if !ok {
-		return false
-	}
-	return int(f.Fd()) < 3
-}
+func errIoWriteCloser(err error) io.WriteCloser { return &nopWriteCloser{&errIoWriter{err}} }
+
+type errIoWriter struct{ err error }
+
+func (w *errIoWriter) Write([]byte) (int, error) { return 0, w.err }
 
 // ToIoWriteCloser transforms a Writer to an io.WriteCloser, by binding a relevant
 // context.Context to it. If err != nil, then n == 0. If err == nil, then n == len(frame).
