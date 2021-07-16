@@ -29,7 +29,7 @@ func (w *highlevelWriter) WriteFrame(ctx context.Context, frame []byte) error {
 	w.writerMu.Lock()
 	defer w.writerMu.Unlock()
 
-	return tracing.FuncTracerFromContext(ctx, w).TraceFunc(ctx, "WriteFrame", func(ctx context.Context, span trace.Span) error {
+	return tracing.FromContext(ctx, w).TraceFunc(ctx, "WriteFrame", func(ctx context.Context, span trace.Span) error {
 		// Refuse to write too large frames
 		if int64(len(frame)) > w.opts.MaxFrameSize {
 			return content.MakeFrameSizeOverflowError(w.opts.MaxFrameSize)

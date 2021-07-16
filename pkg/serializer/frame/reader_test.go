@@ -14,6 +14,7 @@ import (
 	"github.com/weaveworks/libgitops/pkg/serializer/frame/content"
 	"github.com/weaveworks/libgitops/pkg/tracing"
 	"go.opentelemetry.io/otel/trace"
+	"go.uber.org/zap/zapcore"
 	"k8s.io/utils/pointer"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
@@ -21,7 +22,9 @@ import (
 
 func init() {
 	// Set up the global logger
-	log.SetLogger(zap.New()) // zap.JSONEncoder()
+	log.SetLogger(zap.New(zap.ConsoleEncoder(func(ec *zapcore.EncoderConfig) {
+		ec.TimeKey = ""
+	}))) // zap.JSONEncoder()
 
 	err := tracing.NewBuilder().
 		//RegisterStdoutExporter(stdouttrace.WithWriter(io.Discard)).

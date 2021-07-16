@@ -8,10 +8,13 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/go-logr/logr"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/weaveworks/libgitops/pkg/serializer/frame/content"
 	"github.com/weaveworks/libgitops/pkg/tracing"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 )
 
 /*func init() {
@@ -79,6 +82,40 @@ func Test_isStdio(t *testing.T) {
 	}
 }*/
 
+func someOperation(context.Context) error { return nil }
+
+func doWork(ctx context.Context) error {
+	return tracing.FromContextUnnamed(ctx).TraceFunc(ctx, "doWork",
+		func(ctx context.Context, span trace.Span) error {
+			// ... do some work, get a result ...
+			// This will yield a log entry
+			result := "wow"
+			span.SetAttributes(attribute.String("result", result))
+
+			// .. do more work in someOperation ..
+			// if someOperation returns an error, this trace will also have an
+			// error registered and logged
+			return someOperation(ctx)
+		}).Register()
+}
+
+func doWork2(ctx context.Context) error {
+	log := logr.FromContextOrDiscard(ctx)
+	log.WithName("doWork")
+
+	// ... do some work, get a result ...
+	result := "wow"
+	log.Info("got a result", "result", result)
+
+	// .. do more work in someOperation ..
+	err := someOperation(ctx)
+	if err != nil {
+		log.Error(err, "got error from someOperation")
+		return err
+	}
+	return nil
+}
+
 func TestFromConstructors(t *testing.T) {
 	yamlPath := filepath.Join(t.TempDir(), "foo.yaml")
 	str := "foo: bar\n"
@@ -86,7 +123,7 @@ func TestFromConstructors(t *testing.T) {
 	err := ioutil.WriteFile(yamlPath, byteContent, 0644)
 	require.Nil(t, err)
 
-	ctx := context.Background()
+	ctx := tracing.BackgroundTracingContext()
 	// FromFile -- found
 	got, err := NewYAMLReader(content.FromFile(yamlPath)).ReadFrame(ctx)
 	assert.Nil(t, err)

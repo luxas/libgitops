@@ -113,7 +113,7 @@ type writeContextLockImpl struct {
 }
 
 func (r *writeContextLockImpl) Write(p []byte) (n int, err error) {
-	ft := tracing.FuncTracerFromContext(r.ctx, r.w)
+	ft := tracing.FromContext(r.ctx, r.w)
 	err = ft.TraceFunc(r.ctx, "Write", func(ctx context.Context, span trace.Span) error {
 		var tmperr error
 		if r.underlyingLock != nil {

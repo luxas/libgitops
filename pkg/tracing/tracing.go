@@ -58,12 +58,16 @@ type TracerNamed interface {
 }
 
 //
-func FuncTracerFromContext(ctx context.Context, obj interface{}) FuncTracer {
+func FromContext(ctx context.Context, obj interface{}) FuncTracer {
 	name := "<unknown>"
-	tr, ok := obj.(TracerNamed)
-	if ok {
+	// TODO: Use a switch clause
+	tr, isTracerNamed := obj.(TracerNamed)
+	str, isString := obj.(string)
+	if isTracerNamed {
 		name = tr.TracerName()
-	} else if obj != nil {
+	} else if isString {
+		name = str
+	} else if obj != nil {
 		name = fmt.Sprintf("%T", obj)
 	}
 
@@ -79,6 +83,10 @@ func FuncTracerFromContext(ctx context.Context, obj interface{}) FuncTracer {
 	}
 
 	return TracerOptions{Name: name, provider: trace.SpanFromContext(ctx).TracerProvider()}
+}
+
+func FromContextUnnamed(ctx context.Context) FuncTracer {
+	return FromContext(ctx, "")
 }
 
 // TraceFuncResult can either just simply return the error from TraceFunc, or register the error using

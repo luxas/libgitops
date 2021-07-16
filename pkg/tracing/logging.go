@@ -46,7 +46,7 @@ type loggingTracer struct {
 }
 
 func (t *loggingTracer) Start(ctx context.Context, spanName string, opts ...trace.SpanStartOption) (context.Context, trace.Span) {
-	log := ctrllog.FromContext(ctx).WithName(t.name).WithValues(spanNameKey, spanName)
+	log := ctrllog.FromContext(ctx).WithName(t.name) //.WithValues(spanNameKey, spanName)
 	spanCfg := trace.NewSpanStartConfig(opts...)
 	startLog := log
 	if len(spanCfg.Attributes()) != 0 {

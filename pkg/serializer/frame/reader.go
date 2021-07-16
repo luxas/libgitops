@@ -43,7 +43,7 @@ func (r *highlevelReader) ReadFrame(ctx context.Context) ([]byte, error) {
 	defer r.readMu.Unlock()
 
 	var frame []byte
-	err := tracing.FuncTracerFromContext(ctx, r).
+	err := tracing.FromContext(ctx, r).
 		TraceFunc(ctx, "ReadFrame", func(ctx context.Context, span trace.Span) error {
 
 			// Refuse to write more than the maximum amount of successful frames

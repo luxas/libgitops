@@ -31,7 +31,7 @@ type readContextLockImpl struct {
 }
 
 func (r *readContextLockImpl) Read(p []byte) (n int, err error) {
-	ft := tracing.FuncTracerFromContext(r.ctx, r.r)
+	ft := tracing.FromContext(r.ctx, r.r)
 	err = ft.TraceFunc(r.ctx, "Read", func(ctx context.Context, span trace.Span) error {
 		var tmperr error
 		if r.underlyingLock != nil {
@@ -61,7 +61,7 @@ func (c *closeContextLockImpl) Close() error {
 		spanName = "CloseNoop"
 	}
 
-	ft := tracing.FuncTracerFromContext(c.ctx, c.c)
+	ft := tracing.FromContext(c.ctx, c.c)
 	return ft.TraceFunc(c.ctx, spanName, func(ctx context.Context, _ trace.Span) error {
 		// Don't close if c.c is nil
 		if c.c == nil {

@@ -29,9 +29,6 @@ type Reader interface {
 	// Close method will only log a "CloseNoop" trace and exit with err == nil.
 	WithContext(ctx context.Context) io.ReadCloser
 
-	RawReader() io.Reader
-	RawCloser() io.Closer
-
 	// This reader supports registering metadata about the content it
 	// is reading.
 	MetadataBound
@@ -42,6 +39,12 @@ type Reader interface {
 	// HasCloser() of the returned Reader will be true, otherwise false.
 	Wrap(fn WrapReaderFunc) Reader
 	WrapSegment(fn WrapReaderToSegmentFunc) SegmentReader
+}
+
+type readerInternal interface {
+	Reader
+	RawReader() io.Reader
+	RawCloser() io.Closer
 }
 
 type RawSegmentReader interface {
@@ -56,27 +59,33 @@ type ClosableRawSegmentReader interface {
 type SegmentReader interface {
 	WithContext(ctx context.Context) ClosableRawSegmentReader
 
+	MetadataBound
+}
+
+// In the future, one can implement a WrapSegment function that is of
+// the following form:
+// WrapSegment(name string, fn WrapSegmentFunc) SegmentReader
+// where WrapSegmentFunc is func(underlying ClosableRawSegmentReader) RawSegmentReader
+// This allows chaining simple composite SegmentReaders
+
+type segmentReaderInternal interface {
+	SegmentReader
 	RawSegmentReader() RawSegmentReader
 	RawCloser() io.Closer
-
-	MetadataBound
-
-	// In the future, one can implement a WrapSegment function that is of
-	// the following form:
-	// WrapSegment(name string, fn WrapSegmentFunc) SegmentReader
-	// where WrapSegmentFunc is func(underlying ClosableRawSegmentReader) RawSegmentReader
-	// This allows chaining simple composite SegmentReaders
 }
 
 type Writer interface {
 	WithContext(ctx context.Context) io.WriteCloser
-
-	RawWriter() io.Writer
-	RawCloser() io.Closer
 
 	// This writer supports registering metadata about the content it
 	// is writing and the destination it is writing to.
 	MetadataBound
 
 	Wrap(fn WrapWriterFunc) Writer
+}
+
+type writerInternal interface {
+	Writer
+	RawWriter() io.Writer
+	RawCloser() io.Closer
 }

@@ -41,7 +41,7 @@ type readSegmentContextLockImpl struct {
 }
 
 func (r *readSegmentContextLockImpl) Read() (content []byte, err error) {
-	ft := tracing.FuncTracerFromContext(r.ctx, r.r)
+	ft := tracing.FromContext(r.ctx, r.r)
 	err = ft.TraceFunc(r.ctx, "ReadSegment", func(ctx context.Context, span trace.Span) error {
 		var tmperr error
 		if r.underlyingLock != nil {
