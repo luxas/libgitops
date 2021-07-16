@@ -494,18 +494,20 @@ func TestDecodeAll(t *testing.T) {
 
 	for _, rt := range tests {
 		t.Run(rt.name, func(t2 *testing.T) {
-			objs, actual := ourserializer.Decoder(
+			list := &metav1.List{}
+			actual := ourserializer.Decoder(
 				WithDefaultsDecode(rt.doDefaulting),
-				WithListElementsDecoding(rt.listSplit),
-			).DecodeAll(frame.NewYAMLReader(frame.FromBytes(rt.data)))
+				//WithListElementsDecoding(rt.listSplit),
+			).DecodeInto(frame.NewYAMLReader(frame.FromBytes(rt.data)), list)
 			if (actual != nil) != rt.expectedErr {
 				t2.Errorf("expected error %t but actual %t: %v", rt.expectedErr, actual != nil, actual)
 			}
-			for i := range objs {
-				expected := rt.expected[i]
-				obj := objs[i]
 
-				if expected != nil && obj != nil && !reflect.DeepEqual(obj, expected) {
+			for i := range list.Items {
+				expected := rt.expected[i]
+				obj := list.Items[i]
+
+				if expected != nil && obj.Object != nil && !reflect.DeepEqual(obj.Object, expected) {
 					t2.Errorf("item %d: expected %#v but actual %#v", i, expected, obj)
 				}
 			}

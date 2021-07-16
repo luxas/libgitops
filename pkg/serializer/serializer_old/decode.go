@@ -306,6 +306,7 @@ func (d *decoder) extractNestedObjects(obj runtime.Object, ct frame.FramingType)
 	}
 
 	// Try to cast the object to a v1.List. If the object isn't a list, just return it
+	// TODO: Use meta.EachListItem instead
 	list, ok := obj.(*metav1.List)
 	if !ok {
 		return []runtime.Object{obj}, nil
